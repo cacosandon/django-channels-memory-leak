@@ -1,12 +1,12 @@
 # chat/consumers.py
-import json
 
-from channels.generic.websocket import AsyncWebsocketConsumer
-from memory_profiler import profile
+import gc
+import random
+
+from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 
-class ChatConsumer(AsyncWebsocketConsumer):
-    @profile
+class ChatConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         self.room_name = self.scope["url_route"]["kwargs"]["room_name"]
         self.room_group_name = f"chat_{self.room_name}"
@@ -16,37 +16,38 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
-    @profile
     async def disconnect(self, close_code):
         # Leave room group
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     # Receive message from WebSocket
-    @profile
     async def receive(self, text_data):
-        text_data_json = json.loads(text_data)
-        message = text_data_json["message"]
-
-        # Create a struct of 1 Mb
-        struct = bytearray(1024 * 1024)
-
+        content = await self.decode_json(text_data)
 
         # Send message to room group
         await self.channel_layer.group_send(
-            self.room_group_name, {"type": "chat.message", "message": message}
+            self.room_group_name, {"type": "chat.message", "content": content}
         )
 
-        # Send 1 Mb of data
-        await self.channel_layer.group_send(
-            self.room_group_name, {"type": "chat.binary", "message": struct}
-        )
+        for i in range(500):
+            # Create a struct of variable Mb from 1 to 5
+            struct = bytearray(1024 * 1024 * random.randint(1, 5))
+            message = bytes(struct)
+            await self.channel_layer.group_send(
+                self.room_group_name, {"type": "chat.binary", "message": message}
+            )
+
+            print(f"Sent message {i + 1} of 500")
+
+            del struct
+            gc.collect()
 
     # Receive message from room group
     async def chat_message(self, event):
-        message = event["message"]
+        content = event["content"]
 
         # Send message to WebSocket
-        await self.send(text_data=json.dumps({"message": message}))
+        await self.send_json(content=content)
 
     async def chat_binary(self, event):
         message = event["message"]

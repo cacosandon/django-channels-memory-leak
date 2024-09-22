@@ -245,3 +245,6 @@ modules.xml
 
 # Memory profiling
 **/*.dat
+**/*.bin
+**/memray-*.html
+reports
